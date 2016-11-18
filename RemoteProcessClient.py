@@ -47,6 +47,8 @@ class RemoteProcessClient:
         self.players = None
         self.buildings = None
         self.trees = None
+        self.player_by_id = {}
+        self.unit_by_id = {}
 
     def write_token_message(self, token):
         self.write_enum(RemoteProcessClient.MessageType.AUTHENTICATION_TOKEN)
@@ -54,7 +56,7 @@ class RemoteProcessClient:
 
     def write_protocol_version_message(self):
         self.write_enum(RemoteProcessClient.MessageType.PROTOCOL_VERSION)
-        self.write_int(2)
+        self.write_int(3)
 
     def read_team_size_message(self):
         message_type = self.read_enum(RemoteProcessClient.MessageType)
@@ -128,15 +130,22 @@ class RemoteProcessClient:
                 self.write_bonus(bonus)
 
     def read_building(self):
-        if not self.read_boolean():
+        flag = self.read_signed_byte()
+
+        if flag == 0:
             return None
 
-        return Building(
+        if flag == 100:
+            return self.unit_by_id[self.read_long()]
+
+        building = Building(
             self.read_long(), self.read_double(), self.read_double(), self.read_double(), self.read_double(),
             self.read_double(), self.read_enum(Faction), self.read_double(), self.read_int(), self.read_int(),
             self.read_statuses(), self.read_enum(BuildingType), self.read_double(), self.read_double(), self.read_int(),
             self.read_int(), self.read_int()
         )
+        self.unit_by_id[building.id] = building
+        return building
 
     def write_building(self, building):
         if building is None:
@@ -390,15 +399,22 @@ class RemoteProcessClient:
                 self.write_message(message)
 
     def read_minion(self):
-        if not self.read_boolean():
+        flag = self.read_signed_byte()
+
+        if flag == 0:
             return None
 
-        return Minion(
+        if flag == 100:
+            return self.unit_by_id[self.read_long()]
+
+        minion = Minion(
             self.read_long(), self.read_double(), self.read_double(), self.read_double(), self.read_double(),
             self.read_double(), self.read_enum(Faction), self.read_double(), self.read_int(), self.read_int(),
             self.read_statuses(), self.read_enum(MinionType), self.read_double(), self.read_int(), self.read_int(),
             self.read_int()
         )
+        self.unit_by_id[minion.id] = minion
+        return minion
 
     def write_minion(self, minion):
         if minion is None:
@@ -471,13 +487,18 @@ class RemoteProcessClient:
                 self.write_move(move)
 
     def read_player(self):
-        if not self.read_boolean():
+        flag = self.read_signed_byte()
+
+        if flag == 0:
             return None
 
-        return Player(
-            self.read_long(), self.read_boolean(), self.read_string(), self.read_boolean(), self.read_int(),
-            self.read_enum(Faction)
-        )
+        if flag == 100:
+            return self.player_by_id[self.read_long()]
+
+        player = Player(self.read_long(), self.read_boolean(), self.read_string(), self.read_boolean(), self.read_int(),
+                        self.read_enum(Faction))
+        self.player_by_id[player.id] = player
+        return player
 
     def write_player(self, player):
         if player is None:
@@ -639,14 +660,21 @@ class RemoteProcessClient:
                 self.write_status(status)
 
     def read_tree(self):
-        if not self.read_boolean():
+        flag = self.read_signed_byte()
+
+        if flag == 0:
             return None
 
-        return Tree(
+        if flag == 100:
+            return self.unit_by_id[self.read_long()]
+
+        tree = Tree(
             self.read_long(), self.read_double(), self.read_double(), self.read_double(), self.read_double(),
             self.read_double(), self.read_enum(Faction), self.read_double(), self.read_int(), self.read_int(),
             self.read_statuses()
         )
+        self.unit_by_id[tree.id] = tree
+        return tree
 
     def write_tree(self, tree):
         if tree is None:
@@ -900,9 +928,12 @@ class RemoteProcessClient:
         self.write_int(len(byte_array))
         self.write_bytes(byte_array)
 
-    def read_boolean(self):
+    def read_signed_byte(self):
         byte_array = self.read_bytes(RemoteProcessClient.SIGNED_BYTE_SIZE_BYTES)
-        return struct.unpack(RemoteProcessClient.BYTE_FORMAT_STRING, byte_array)[0] != 0
+        return struct.unpack(RemoteProcessClient.BYTE_FORMAT_STRING, byte_array)[0]
+
+    def read_boolean(self):
+        return self.read_signed_byte() != 0
 
     def read_boolean_array(self, count):
         byte_array = self.read_bytes(count * RemoteProcessClient.SIGNED_BYTE_SIZE_BYTES)
